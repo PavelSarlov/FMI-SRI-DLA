@@ -19,7 +19,7 @@ import nltk
 from nltk.corpus import PlaintextCorpusReader
 import sys
 
-corpus_root = 'JOURNALISM.BG/C-MassMedia'
+corpus_root = '../JOURNALISM.BG/C-MassMedia'
 myCorpus = PlaintextCorpusReader(corpus_root, '.*\.txt')
 fileNames = myCorpus.fileids()
 
