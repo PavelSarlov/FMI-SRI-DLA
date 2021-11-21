@@ -1,0 +1,3 @@
+https://medium.com/data-from-the-trenches/arithmetic-properties-of-word-embeddings-e918e3fda2ac
+https://aclanthology.org/P17-1007/
+https://jalammar.github.io/illustrated-word2vec/
