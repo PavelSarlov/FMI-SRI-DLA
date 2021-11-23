@@ -33,20 +33,18 @@ def editDistance(s1, s2):
     #############################################################################
     #### Начало на Вашия код. На мястото на pass се очакват 10-25 реда
 
-    distMatrix = np.zeros((len(s1)+1,len(s2)+1), dtype=np.uint32)
-    distMatrix[0] = np.arange(len(s2)+1)
-    distMatrix[:,0] = np.arange(len(s1)+1)
-
+    distMatrix = [[y+x for x in range(len(s2)+1)] for y in range(len(s1)+1)]
+    
     for i in range(1,len(s1)+1):
         for j in range(1,len(s2)+1):
             cost = 0 if s1[i-1]==s2[j-1] else 1
-            distMatrix[i, j] = min(distMatrix[i-1, j-1] + cost,
-                                distMatrix[i, j-1] + 1,
-                                distMatrix[i-1, j] + 1)
+            distMatrix[i][j] = min(distMatrix[i-1][j-1] + cost,
+                                distMatrix[i][j-1] + 1,
+                                distMatrix[i-1][j] + 1)
             if i>1 and j>1 and s1[i-1]==s2[j-2] and s1[i-2]==s2[j-1] and s1[i-1]!=s2[j-1]:
-                distMatrix[i, j] = min(distMatrix[i, j],
-                                distMatrix[i-2, j-2] + 1)
-    return distMatrix[-1,-1]
+                distMatrix[i][j] = min(distMatrix[i][j],
+                                distMatrix[i-2][j-2] + 1)
+    return distMatrix[-1][-1]
 
     #### Край на Вашия код
     #############################################################################
@@ -66,29 +64,31 @@ def editOperations(s1, s2):
     #############################################################################
     #### Начало на Вашия код.
 
-    cellType = [('0', np.uint32, 3),('1','U2',2)]
-    distMatrix = np.empty((len(s1)+1,len(s2)+1), dtype=cellType)
-    distMatrix[0] = np.array([([x,0,max(x-1,0)],['',s2[x-1] if x>0 else '']) for x in range(len(s2)+1)], dtype=cellType)
-    distMatrix[:,0] = np.array([([x,max(x-1,0),0],[s1[x-1] if x>0 else '','']) for x in range(len(s1)+1)], dtype=cellType)
+    len1 = len(s1) + 1; len2 = len(s2) + 1
+    distMatrix = [[0 for x in range(len2)] for y in range(len1)]
+    for i in range(len2):
+        distMatrix[0][i] = (i,0,max(i-1,0),'',s2[i-1] if i > 0 else '')
+    for i in range(len1):
+        distMatrix[i][0] = (i,max(i-1,0),0,s1[i-1] if i > 0 else '','')
 
-    for i in range(1,len(s1)+1):
-        for j in range(1,len(s2)+1):
+    for i in range(1,len1):
+        for j in range(1,len2):
             cost = 0 if s1[i-1]==s2[j-1] else 1
-            distMatrix[i, j] = min(([distMatrix[i-1, j-1][0][0] + cost, i-1, j-1], [s1[i-1], s2[j-1]]),
-                                ([distMatrix[i, j-1][0][0] + 1, i, j-1], ['', s2[j-1]]),
-                                ([distMatrix[i-1, j][0][0] + 1, i-1, j], [s1[i-1], '']),
-                                key = lambda x: x[0][0])
+            distMatrix[i][j] = min((distMatrix[i-1][j-1][0] + cost, i-1, j-1, s1[i-1], s2[j-1]),
+                                (distMatrix[i][j-1][0] + 1, i, j-1, '', s2[j-1]),
+                                (distMatrix[i-1][j][0] + 1, i-1, j, s1[i-1], ''),
+                                key = lambda x: x[0])
             if i>1 and j>1 and s1[i-1]==s2[j-2] and s1[i-2]==s2[j-1] and s1[i-1]!=s2[j-1]:
-                distMatrix[i, j] = min(distMatrix[i, j],
-                                ([distMatrix[i-2, j-2][0][0] + 1, i-2, j-2], [s1[i-2:i], s2[j-2:j]]),
-                                key = lambda x: x[0][0])
-
-    result = np.empty(0, dtype=[('0','U2'),('1','U2')])
-    cell = [np.size(distMatrix,0)-1, np.size(distMatrix,1)-1]
+                distMatrix[i][j] = min(distMatrix[i][j],
+                                (distMatrix[i-2][j-2][0] + 1, i-2, j-2, s1[i-2:i], s2[j-2:j]),
+                                key = lambda x: x[0])
+                
+    result = []
+    cell = (len(s1), len(s2))
     while any(cell):
-        result = np.insert(result, 0, tuple(distMatrix[cell[0], cell[1]][1]))
-        cell = distMatrix[cell[0],cell[1]][0][1:]
-    return result.tolist()
+        result += [distMatrix[cell[0]][cell[1]][3:]]
+        cell = distMatrix[cell[0]][cell[1]][1:3]
+    return result[::-1]
 
     #### Край на Вашия код
     #############################################################################
@@ -153,25 +153,22 @@ def editWeight(s1, s2, operationProbs):
     #############################################################################
     #### Начало на Вашия код. На мястото на pass се очакват 10-25 реда
 
-    distMatrix = np.zeros((len(s1)+1,len(s2)+1))
-    if np.size(distMatrix, 1) > 1:
-        distMatrix[0, 1:] = np.array([operationWeight('', x, operationProbs) for x in s2])
-        for i in range(2, np.size(distMatrix,1)):
-            distMatrix[0, i] += distMatrix[0, i-1]
-    if np.size(distMatrix, 0) > 1:
-        distMatrix[1:, 0] = np.array([operationWeight(x, '', operationProbs) for x in s1])
-        for i in range(2, np.size(distMatrix,0)):
-            distMatrix[i, 0] += distMatrix[i-1, 0]
+    len1 = len(s1) + 1; len2 = len(s2) + 1
+    distMatrix = [[0 for x in range(len2)] for y in range(len1)]
+    for i in range(1, len2):
+        distMatrix[0][i] += operationWeight('', s2[i-1], operationProbs) + distMatrix[0][i-1]
+    for i in range(1, len1):
+        distMatrix[i][0] += operationWeight(s1[i-1], '', operationProbs) + distMatrix[i-1][0]
 
-    for i in range(1,len(s1)+1):
-        for j in range(1,len(s2)+1):
-            distMatrix[i, j] = min(distMatrix[i-1, j-1] + operationWeight(s1[i-1], s2[j-1], operationProbs),
-                                distMatrix[i, j-1] + operationWeight('', s2[j-1], operationProbs),
-                                distMatrix[i-1, j] + operationWeight(s1[i-1], '', operationProbs))
+    for i in range(1,len1):
+        for j in range(1,len2):
+            distMatrix[i][j] = min(distMatrix[i-1][j-1] + operationWeight(s1[i-1], s2[j-1], operationProbs),
+                                distMatrix[i][j-1] + operationWeight('', s2[j-1], operationProbs),
+                                distMatrix[i-1][j] + operationWeight(s1[i-1], '', operationProbs))
             if i>1 and j>1 and s1[i-1]==s2[j-2] and s1[i-2]==s2[j-1] and s1[i-1]!=s2[j-1]:
-                distMatrix[i, j] = min(distMatrix[i, j],
-                                distMatrix[i-2, j-2] + operationWeight(s1[i-2:i], s2[j-2:j], operationProbs))
-    return distMatrix[-1,-1]
+                distMatrix[i][j] = min(distMatrix[i][j],
+                                distMatrix[i-2][j-2] + operationWeight(s1[i-2:i], s2[j-2:j], operationProbs))
+    return distMatrix[-1][-1]
 
     #### Край на Вашия код. 
     #############################################################################
@@ -185,14 +182,15 @@ def generateEdits(q):
     ###
     #############################################################################
     #### Начало на Вашия код. На мястото на pass се очакват 10-15 реда
-
+    
     result = []
     for i in range(len(q)+1):
         result.append(q[:i] + q[i+1:]) # deletions
         result.append(q[:i] + q[i:i+2][::-1] + q[i+2:]) # transpositions
         for c in alphabet:
             result.append(q[:i] + c + q[i:]) # insertions
-            result.append(q[:i] + c + q[i+1:]) # substitutions
+            if i<len(q) and c != q[i]:
+                result.append(q[:i] + c + q[i+1:]) # substitutions
     result = set(result)
     result.remove(q)
     return list(result)
@@ -215,21 +213,21 @@ def generateCandidates(query,dictionary,operationProbs):
     #############################################################################
     #### Начало на Вашия код. На мястото на pass се очакват 10-15 реда
 
-    allCandidates = np.array([query], dtype='U{}'.format(len(query)+2))
+    allCandidates = [query]
     maxDist = 2
     for i in range(maxDist):
-        temp = np.empty(0, dtype='U{}'.format(len(query)+2))
-        for q in allCandidates:
-            temp = np.append(temp, generateEdits(q))
-        allCandidates = np.append(np.delete(allCandidates, allCandidates==query), temp)
-        
-    result = np.empty(0, dtype=[('0', 'U{}'.format(len(query)+2)),('1','f4')])
+        for x in list(map(generateEdits, allCandidates)):
+            allCandidates += x
+    allCandidates = set(allCandidates)
+    allCandidates.remove(query)
+    
+    result = []
     for candidate in allCandidates:
         if candidate in dictionary:
-            candidate_edit_log_prob = editWeight(candidate, query, operationProbs) #abs(sum(np.log(operationProbs[op]) for op in editOperations(candidate, query)) + editWeight(candidate, query, operationProbs))
-            result = np.append(result, np.array([(candidate, candidate_edit_log_prob)], dtype = [('0', 'U{}'.format(len(query)+2)),('1','f4')]))
+            candidate_edit_log_prob = editWeight(candidate, query, operationProbs)
+            result += [(candidate, candidate_edit_log_prob)]
             
-    return np.unique(result).tolist()
+    return result
 
     #### Край на Вашия код
     #############################################################################
@@ -255,7 +253,7 @@ def correctSpelling(r, dictionary, operationProbs):
                 corrected[i].append(w)
                 continue
             candidates = generateCandidates(w, dictionary, operationProbs)
-            corrected[i].append(min(candidates, key=lambda x: x[1])[0] if candidates else r[i][j])
+            corrected[i].append(min(candidates, key=lambda x: x[1])[0] if candidates else w)
     return corrected
 
     #### Край на Вашия код
