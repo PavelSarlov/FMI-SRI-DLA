@@ -118,9 +118,9 @@ def computeOperationProbs(corrected_corpus,uncorrected_corpus,smoothing = 0.2):
     #############################################################################
     #### Начало на Вашия код.
 
-    for i in range(len(corrected_corpus)):
-        for j in range(len(corrected_corpus[i])):
-            for op in editOperations(corrected_corpus[i][j], uncorrected_corpus[i][j]):
+    for sent1,sent2 in zip(corrected_corpus, uncorrected_corpus):
+        for word1,word2 in zip(sent1,sent2):
+            for op in editOperations(word1, word2):
                 if op in operations:
                     operations[op] += 1
 
@@ -221,12 +221,9 @@ def generateCandidates(query,dictionary,operationProbs):
     allCandidates = set(allCandidates)
     allCandidates.remove(query)
     
-    result = []
-    for candidate in allCandidates:
-        if candidate in dictionary:
-            candidate_edit_log_prob = editWeight(candidate, query, operationProbs)
-            result += [(candidate, candidate_edit_log_prob)]
-            
+    result = list(map(lambda x: (x, editWeight(x, query, operationProbs)), 
+                      filter(lambda x: x in dictionary, allCandidates)))
+    
     return result
 
     #### Край на Вашия код
