@@ -214,8 +214,7 @@ def generateCandidates(query,dictionary,operationProbs):
     #### Начало на Вашия код. На мястото на pass се очакват 10-15 реда
 
     allCandidates = [query]
-    maxDist = 2
-    for i in range(maxDist):
+    for i in range(2):
         for x in list(map(generateEdits, allCandidates)):
             allCandidates += x
     allCandidates = set(allCandidates)
@@ -242,9 +241,8 @@ def correctSpelling(r, dictionary, operationProbs):
     #############################################################################
     #### Начало на Вашия код. На мястото на pass се очакват 5-15 реда
 
-    corrected = []
+    corrected = [[] for s in r]
     for i,s in enumerate(r):
-        corrected.append([])
         for j,w in enumerate(s):
             if any(map(lambda x: x not in alphabet, w)) or w in dictionary:
                 corrected[i].append(w)
