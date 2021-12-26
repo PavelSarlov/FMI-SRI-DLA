@@ -43,6 +43,7 @@ if len(sys.argv)>1:
         try:
             [u_w,Vt,v,J,du_w,dVt,dv] = np.load('test4.npy',allow_pickle=True)
             J1, du_w1, dVt1, dv1 = grads.lossAndGradient(u_w, Vt, v)
+            # print(J, du_w.shape, dVt.shape, dv.shape)
             assert du_w.shape == du_w1.shape, "Формата на du_w не съвпада с очакваната"
             assert dVt.shape == dVt1.shape, "Формата на dVt не съвпада с очакваната"
             assert np.max(np.abs(J-J1))<1e-3, "Стойноста на J не съвпадат с очакваната"
