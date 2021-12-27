@@ -31,21 +31,20 @@ def lossAndGradient(u_w, Vt, v):
     ####            вместо сами да имплементирате хиперболичен тангенс.
     #### Начало на Вашия код. На мястото на pass се очакват 7-15 реда
     
-    print(u_w.shape, Vt.shape, v.shape)
     delta = np.array([1 if x==0 else 0 for x in range(Vt.shape[0])])
-    dot = np.dot(delta, Vt)
 
-    J = -(np.log(sigmoid(np.dot(v, np.tanh(u_w + dot)))) 
-            +np.sum(np.log(sigmoid(-np.dot(v, np.tanh(u_w + Vt).T))))
-            -np.log(sigmoid(-np.dot(v, np.tanh(u_w + dot)))))
-    du_w = -((1-sigmoid(np.dot(v, np.tanh(u_w + dot))))*(np.dot(v, (1-np.tanh(u_w + dot)**2)))
-            +np.sum((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T)))*(-np.dot(v, (1-np.tanh(u_w + Vt).T**2))))
-            -(1-sigmoid(-np.dot(v, np.tanh(u_w + dot))))*(-np.dot(v, (1-np.tanh(u_w + dot)**2))))
-    dVt = np.ones(5)
-    dv = -((1-sigmoid(np.dot(v, np.tanh(u_w + dot))))*np.tanh(u_w + dot)
-            +np.sum((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T)))*(-np.tanh(u_w + Vt).T), 1)
-            -(1-sigmoid(-np.dot(v, np.tanh(u_w + dot))))*(-np.tanh(u_w + dot)))
-    
+    J = -(np.dot(delta, np.log(sigmoid(np.dot(v, (np.tanh(u_w + Vt)).T))))
+         +np.dot(1-delta, np.log(sigmoid(-np.dot(v, (np.tanh(u_w + Vt)).T)))))
+
+    dv = -(np.dot(delta, ((1-sigmoid(np.dot(v, np.tanh(u_w + Vt).T))) * np.tanh(u_w + Vt).T).T)
+          +np.dot(1-delta, ((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T))) * -np.tanh(u_w + Vt).T).T))
+
+    du_w = -(np.dot(delta, ((1-sigmoid(np.dot(v, np.tanh(u_w + Vt).T))) * (v * (1 - np.tanh(u_w + Vt)**2)).T).T)
+            +np.dot(1-delta, ((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T))) * (-v * (1 - np.tanh(u_w + Vt)**2)).T).T))
+
+    dVt = -(((1-sigmoid(np.dot(v, np.tanh(u_w + Vt).T))) * (v * (1 - np.tanh(u_w + Vt)**2)).T).T * (delta * Vt.T).T / Vt
+            +((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T))) * (-v * (1 - np.tanh(u_w + Vt)**2)).T).T * ((1-delta) * Vt.T).T / Vt)
+
     #### Край на Вашия код
     #############################################################################
 
