@@ -24,7 +24,7 @@ import sampling
 startToken = '<START>'
 endToken = '<END>'
 
-corpus_root = 'JOURNALISM.BG/C-MassMedia'
+corpus_root = '../../practice/JOURNALISM.BG/C-MassMedia'
 myCorpus = PlaintextCorpusReader(corpus_root, '.*\.txt')
 
 corpus = [ [startToken] + [w.lower() for w in sent] + [endToken] for sent in myCorpus.sents()]

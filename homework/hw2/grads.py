@@ -32,18 +32,16 @@ def lossAndGradient(u_w, Vt, v):
     #### Начало на Вашия код. На мястото на pass се очакват 7-15 реда
     
     delta = np.array([1 if x==0 else 0 for x in range(Vt.shape[0])])
+    U_W = np.tanh(u_w + Vt)
+    vU_W = np.dot(v, U_W.T) 
 
-    J = -(np.dot(delta, np.log(sigmoid(np.dot(v, (np.tanh(u_w + Vt)).T))))
-         +np.dot(1-delta, np.log(sigmoid(-np.dot(v, (np.tanh(u_w + Vt)).T)))))
-
-    dv = -(np.dot(delta, ((1-sigmoid(np.dot(v, np.tanh(u_w + Vt).T))) * np.tanh(u_w + Vt).T).T)
-          +np.dot(1-delta, ((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T))) * -np.tanh(u_w + Vt).T).T))
-
-    du_w = -(np.dot(delta, ((1-sigmoid(np.dot(v, np.tanh(u_w + Vt).T))) * (v * (1 - np.tanh(u_w + Vt)**2)).T).T)
-            +np.dot(1-delta, ((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T))) * (-v * (1 - np.tanh(u_w + Vt)**2)).T).T))
-
-    dVt = -(((1-sigmoid(np.dot(v, np.tanh(u_w + Vt).T))) * (v * (1 - np.tanh(u_w + Vt)**2)).T).T * (delta * Vt.T).T / Vt
-            +((1-sigmoid(-np.dot(v, np.tanh(u_w + Vt).T))) * (-v * (1 - np.tanh(u_w + Vt)**2)).T).T * ((1-delta) * Vt.T).T / Vt)
+    J = -(np.dot(delta, np.log(sigmoid(vU_W))) + np.dot(1-delta, np.log(sigmoid(-vU_W))))
+    dv = -(np.dot(delta, ((1-sigmoid(vU_W)) * U_W.T).T)
+          +np.dot(1-delta, ((1-sigmoid(-vU_W)) * -U_W.T).T))
+    du_w = -(np.dot(delta, ((1-sigmoid(vU_W)) * (v * (1 - U_W**2)).T).T)
+            +np.dot(1-delta, ((1-sigmoid(-vU_W)) * (-v * (1 - U_W**2)).T).T))
+    dVt = -((delta*((1-sigmoid(vU_W)) * (v * (1 - U_W**2)).T)).T
+            +((1-delta)*((1-sigmoid(-vU_W)) * (-v * (1 - U_W**2)).T)).T)
 
     #### Край на Вашия код
     #############################################################################
@@ -91,8 +89,21 @@ def lossAndGradientBatched(u_w, Vt, v):
     #############################################################################
     #### Начало на Вашия код. На мястото на pass се очакват 10-20 реда
     
-    pass
-    
+    delta = np.array([1 if x==0 else 0 for x in range(Vt.shape[1])])
+    S = u_w.shape[0]
+    U_W = np.tanh(np.expand_dims(u_w, 1) + Vt)
+    vU_W = np.tensordot(v, U_W, (0,2)) 
+
+    J = np.sum(-(np.dot(delta, np.log(sigmoid(vU_W).T))
+         +np.dot(1-delta, np.log(sigmoid(-vU_W).T))) / S, 0)
+    dv = -(np.dot(delta, ((1-sigmoid(vU_W)).T * U_W.T).T)
+          +np.dot(1-delta, ((1-sigmoid(-vU_W)).T * -U_W.T).T)) / S
+    du_w = -(np.dot(delta, ((1-sigmoid(vU_W)).T * (v * (1 - U_W**2)).T).T)
+            +np.dot(1-delta, ((1-sigmoid(-vU_W)).T * (-v * (1 - U_W**2)).T).T)) / S
+    delta = np.broadcast_to(delta, (Vt.shape[0], Vt.shape[1])).T
+    dVt = -((delta*((1-sigmoid(vU_W)).T * (v * (1 - U_W**2)).T)).T
+            +((1-delta)*((1-sigmoid(-vU_W)).T * (-v * (1 - U_W**2)).T)).T) / S
+
     #### Край на Вашия код
     #############################################################################
     return J, du_w, dVt, dv
