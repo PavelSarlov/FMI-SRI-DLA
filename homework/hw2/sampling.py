@@ -39,9 +39,8 @@ def createSamplingSequence(freqs):
     #### Начало на Вашия код. На мястото на pass се очакват 3-7 реда
     
     seq = []
-    indices = [*range(len(freqs))]
     for i,w in enumerate(freqs):
-        seq += sampleContext(i, indices, round(w**0.75))[1:]
+        seq += [i]*round(w**0.75)
     
     #### Край на Вашия код
     #############################################################################

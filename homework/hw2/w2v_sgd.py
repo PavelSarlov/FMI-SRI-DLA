@@ -39,7 +39,7 @@ def stochasticGradientDescend(data, U0, V0, v0, contextFunction, lossAndGradient
                 #### Начало на Вашия код. На мястото на pass се очакват 3-6 реда
 
                 U[w] -= alpha*du_w[i]
-                V[w] -= alpha*dVt[i][0]
+                V[context] -= alpha*dVt[i]
                 v -= alpha*dv[i]
                 
                 #### Край на Вашия код

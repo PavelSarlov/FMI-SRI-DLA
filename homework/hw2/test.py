@@ -26,7 +26,7 @@ import pickle
 startToken = '<START>'
 endToken = '<END>'
 
-corpus_root = '../../practice/JOURNALISM.BG/C-MassMedia'
+corpus_root = '../../JOURNALISM.BG/C-MassMedia'
 myCorpus = PlaintextCorpusReader(corpus_root, '.*\.txt')
 
 if len(sys.argv)>1:
