@@ -32,16 +32,16 @@ def lossAndGradient(u_w, Vt, v):
     #### Начало на Вашия код. На мястото на pass се очакват 7-15 реда
     
     delta = np.array([1 if x==0 else 0 for x in range(Vt.shape[0])])
-    U_W = np.tanh(u_w + Vt)
-    vU_W = np.dot(v, U_W.T) 
+    K = np.tanh(u_w + Vt)
+    L = np.dot(v, K.T) 
 
-    J = -(np.dot(delta, np.log(sigmoid(vU_W))) + np.dot(1-delta, np.log(sigmoid(-vU_W))))
-    dv = -(np.dot(delta, ((1-sigmoid(vU_W)) * U_W.T).T)
-          +np.dot(1-delta, ((1-sigmoid(-vU_W)) * -U_W.T).T))
-    du_w = -(np.dot(delta, ((1-sigmoid(vU_W)) * (v * (1 - U_W**2)).T).T)
-            +np.dot(1-delta, ((1-sigmoid(-vU_W)) * (-v * (1 - U_W**2)).T).T))
-    dVt = -((delta*((1-sigmoid(vU_W)) * (v * (1 - U_W**2)).T)).T
-            +((1-delta)*((1-sigmoid(-vU_W)) * (-v * (1 - U_W**2)).T)).T)
+    J = -(np.dot(delta, np.log(sigmoid(L))) + np.dot(1-delta, np.log(sigmoid(-L))))
+    dv = -(np.dot(delta, ((1-sigmoid(L)) * K.T).T)
+          +np.dot(1-delta, ((1-sigmoid(-L)) * -K.T).T))
+    du_w = -(np.dot(delta, ((1-sigmoid(L)) * (v * (1 - K**2)).T).T)
+            +np.dot(1-delta, ((1-sigmoid(-L)) * (-v * (1 - K**2)).T).T))
+    dVt = -((delta*((1-sigmoid(L)) * (v * (1 - K**2)).T)).T
+            +((1-delta)*((1-sigmoid(-L)) * (-v * (1 - K**2)).T)).T)
 
     #### Край на Вашия код
     #############################################################################
@@ -91,18 +91,18 @@ def lossAndGradientBatched(u_w, Vt, v):
     
     delta = np.array([1 if x==0 else 0 for x in range(Vt.shape[1])])
     S = u_w.shape[0]
-    U_W = np.tanh(np.expand_dims(u_w, 1) + Vt)
-    vU_W = np.tensordot(v, U_W, (0,2)) 
+    K = np.tanh(np.expand_dims(u_w, 1) + Vt)
+    L = np.tensordot(v, K, (0,2)) 
 
-    J = np.sum(-(np.dot(delta, np.log(sigmoid(vU_W).T))
-         +np.dot(1-delta, np.log(sigmoid(-vU_W).T))) / S, 0)
-    dv = -(np.dot(delta, ((1-sigmoid(vU_W)).T * U_W.T).T)
-          +np.dot(1-delta, ((1-sigmoid(-vU_W)).T * -U_W.T).T)) / S
-    du_w = -(np.dot(delta, ((1-sigmoid(vU_W)).T * (v * (1 - U_W**2)).T).T)
-            +np.dot(1-delta, ((1-sigmoid(-vU_W)).T * (-v * (1 - U_W**2)).T).T)) / S
+    J = np.sum(-(np.dot(delta, np.log(sigmoid(L).T))
+         +np.dot(1-delta, np.log(sigmoid(-L).T))) / S, 0)
+    dv = -(np.dot(delta, ((1-sigmoid(L)).T * K.T).T)
+          +np.dot(1-delta, ((1-sigmoid(-L)).T * -K.T).T)) / S
+    du_w = -(np.dot(delta, ((1-sigmoid(L)).T * (v * (1 - K**2)).T).T)
+            +np.dot(1-delta, ((1-sigmoid(-L)).T * (-v * (1 - K**2)).T).T)) / S
     delta = np.broadcast_to(delta, (Vt.shape[0], Vt.shape[1])).T
-    dVt = -((delta*((1-sigmoid(vU_W)).T * (v * (1 - U_W**2)).T)).T
-            +((1-delta)*((1-sigmoid(-vU_W)).T * (-v * (1 - U_W**2)).T)).T) / S
+    dVt = -((delta*((1-sigmoid(L)).T * (v * (1 - K**2)).T)).T
+            +((1-delta)*((1-sigmoid(-L)).T * (-v * (1 - K**2)).T)).T) / S
 
     #### Край на Вашия код
     #############################################################################
