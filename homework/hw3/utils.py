@@ -31,7 +31,7 @@ def getAlphabet(corpus):
     return symbols
 
 def prepareData(corpusFileName, startChar, endChar, unkChar, padChar):
-    file = open(corpusFileName,'r')
+    file = open(corpusFileName,'r', encoding="utf-8")
     poems = file.read().split(corpusSplitString)
     symbols = getAlphabet(poems)
     

@@ -43,7 +43,7 @@ class LSTMLanguageModelPack(torch.nn.Module):
         self.endTokenIdx = word2ind[endToken]
         self.hidden_size = hidden_size
         self.dropout = torch.nn.Dropout(dropout)
-        self.lstm = torch.nn.LSTM(embed_size, hidden_size, bidirectional = False, num_layers = lstm_layers, dropout = dropout)
+        self.lstm = torch.nn.LSTM(embed_size, hidden_size, num_layers = lstm_layers, dropout = dropout)
         self.embed = torch.nn.Embedding(len(word2ind), embed_size)
         self.projection = torch.nn.Linear(hidden_size, len(word2ind))
  
@@ -57,25 +57,6 @@ class LSTMLanguageModelPack(torch.nn.Module):
         ###  като направите добавка за dropout
         #############################################################################
         #### Начало на Вашия код.
-
-        # batch_size = len(source)
-        # X = self.preparePaddedBatch(source)
-        # E = self.embed(X)
-        
-        # source_lengths = [len(s) for s in source]
-        # m = X.shape[0]
-        # outputPacked, _ = self.lstm(torch.nn.utils.rnn.pack_padded_sequence(E, source_lengths,enforce_sorted=False))
-        
-        # output,_ = torch.nn.utils.rnn.pad_packed_sequence(outputPacked)
-        # output = output.view(m, batch_size, 2, self.hidden_size)
-        # output = self.dropout(output)
-        # t = torch.cat((output[:-2,:,0,:], output[2:,:,1,:]),2)
-        # Z = self.projection(t.flatten(0,1))
-
-        # Y_bar = X[1:-1].flatten(0,1)
-        # Y_bar[Y_bar==self.endTokenIdx] = self.padTokenIdx
-        # H = torch.nn.functional.cross_entropy(Z,Y_bar,ignore_index=self.padTokenIdx)
-        # return H
 
         X = self.preparePaddedBatch(source)
         E = self.embed(X[:-1])
