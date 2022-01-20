@@ -27,17 +27,33 @@ def generateCode(model, char2id, startSentence, limit=1000, temperature=1.):
     
     model.eval()
 
-    device = next(model.parameters()).device
-    X = torch.tensor([char2id[c] for c in result] if len(result) > 0 else [model.unkTokenIdx], dtype=torch.long, device=device)
-    E = model.embed(X[None, :])                                  
+    # X = torch.tensor([char2id[c] for c in result] if len(result) > 0 else [model.unkTokenIdx], dtype=torch.long)
+    # E = model.embed(X[None, :])                                  
 
     with torch.no_grad():
-        out, hc_n = model.lstm(E)
+        out = None
+        hc_n = None
+        X = None
+        E = None
+
+        if len(result) == 0:
+            X = torch.tensor([model.unkTokenIdx], dtype=torch.long)
+            E = model.embed(X[None, :])                                  
+            out, hc_n = model.lstm(E)
+        else:
+            for c in result:
+               X = torch.tensor([char2id[c]], dtype=torch.long) 
+               E = model.embed(X[None, :])                                  
+               out, hc_n = model.lstm(E, hc_n) if hc_n else model.lstm(E)
 
         while len(result) < limit:
             out = model.dropout(out[-1])
             Z = model.projection(out.flatten(0, 1))
-            p = torch.nn.functional.softmax(Z, dim = 0)
+            p = torch.nn.functional.softmax(Z / temperature, dim = 0)
+
+            # На numpy не му се хареса много грешката в тензорните стойности
+            # затова се наложи да използвам float64 и да нормализирам стойностите.
+            # Не намерих по-подходящ начин.
             prob = np.array(p).astype(np.float64)
             prob /= prob.sum()
 
@@ -47,9 +63,8 @@ def generateCode(model, char2id, startSentence, limit=1000, temperature=1.):
 
             result += c
 
-            X = torch.tensor([char2id[c]], dtype=torch.long, device=device)
+            X = torch.tensor([char2id[c]], dtype=torch.long)
             E = model.embed(X[None, :])
-
             out, hc_n = model.lstm(E, hc_n)
     
     #### Край на Вашия код
