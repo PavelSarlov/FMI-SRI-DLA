@@ -24,11 +24,32 @@ class NMTmodel(torch.nn.Module):
     def load(self,fileName):
         self.load_state_dict(torch.load(fileName))
     
-    def __init__(self, parameter1, parameter2, parameter3,  parameter4):
+    def __init__(self, parameter1, parameter2, parameter3, parameter4):
         super(NMTmodel, self).__init__()
-    
+        # self.encoder = encoder
+        # self.decoder = decoder
+
     def forward(self, source, target):
         return H
 
     def translateSentence(self, sentence, limit=1000):
+        self.eval()
         return result
+
+class LSTMEncoderModel(torch.nn.Module):
+    def __init__(self, embed_size, hidden_size, word2ind, unkToken, padToken):
+        super(EncoderModel, self).__init__()
+        self.word2ind = word2ind
+        self.unkTokenIdx = word2ind[unkToken]
+        self.padTokenIdx = word2ind[padToken]
+        self.lstm = torch.nn.LSTM(embed_size, hidden_size)
+        self.embed = torch.nn.Embedding(len(word2ind), embed_size)
+        self.projection = torch.nn.Linear(hidden_size,len(word2ind))
+
+    def forward(self, ):
+
+        
+
+class LSTMDecoderModel(torch.nn.Module):
+    def __init__(self, hidden_size, target_size):
+        super(DecoderModel, self).__init__()
