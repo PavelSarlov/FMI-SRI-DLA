@@ -49,7 +49,9 @@ if len(sys.argv)>1 and (sys.argv[1] == 'train' or sys.argv[1] == 'extratrain'):
     (sourceCorpus,targetCorpus,sourceDev,targetDev) = pickle.load(open(corpusDataFileName, 'rb'))
     (sourceWord2ind,targetWord2ind) = pickle.load(open(wordsDataFileName, 'rb'))
 
-    nmt = model.NMTmodel(parameter1, parameter2, parameter3,  parameter4).to(device)
+    encoder = model.LSTMEncoder(enc_embed_size, hidden_size, len(sourceWord2ind), enc_layers, enc_dropout).to(device)
+    decoder = model.LSTMDecoder(dec_embed_size, hidden_size, len(targetWord2ind), dec_layers, dec_dropout).to(device)
+    nmt = model.NMTmodel(encoder, decoder, sourceWord2ind, targetWord2ind, unkToken, padToken, endToken).to(device)
     optimizer = torch.optim.Adam(nmt.parameters(), lr=learning_rate)
 
     if sys.argv[1] == 'extratrain':
