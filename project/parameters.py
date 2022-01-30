@@ -12,20 +12,19 @@ modelFileName = 'NMTmodel'
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-enc_layers = 2
-dec_layers = 2
-enc_embed_size = 32
-dec_embed_size = 32
-enc_dropout = 0.5
-dec_dropout = 0.5
-hidden_size = 64
+enc_embed_size = 64
+dec_embed_size = 64
+enc_hid_size = 128
+dec_hid_size = 128
+enc_dropout = 0.2
+dec_dropout = 0.2
 
 uniform_init = 0.1
 learning_rate = 0.001
 clip_grad = 5.0
 learning_rate_decay = 0.5
 
-batchSize = 16
+batchSize = 32
 
 maxEpochs = 2
 log_every = 10
