@@ -55,8 +55,8 @@ if len(sys.argv)>1 and (sys.argv[1] == 'train' or sys.argv[1] == 'extratrain'):
     optimizer = torch.optim.Adam(nmt.parameters(), lr=learning_rate)
 
     if sys.argv[1] == 'extratrain':
-        nmt.load(modelFileName)
-        (bestPerplexity,learning_rate,osd) = torch.load(modelFileName + '.optim')
+        nmt.load(modelFileName,device)
+        (bestPerplexity,learning_rate,osd) = torch.load(modelFileName + '.optim', map_location = device)
         optimizer.load_state_dict(osd)
         for param_group in optimizer.param_groups:
             param_group['lr'] = learning_rate
@@ -138,7 +138,7 @@ if len(sys.argv)>3 and sys.argv[1] == 'perplexity':
     encoder = model.GRUEncoder(enc_embed_size, enc_hid_size, dec_hid_size, len(sourceWord2ind), enc_dropout).to(device)
     decoder = model.GRUDecoder(dec_embed_size, enc_hid_size, dec_hid_size, len(targetWord2ind), dec_dropout).to(device)
     nmt = model.NMTmodel(encoder, decoder, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
-    nmt.load(modelFileName)
+    nmt.load(modelFileName, device)
     
     sourceTest = utils.readCorpus(sys.argv[2])
     targetTest = utils.readCorpus(sys.argv[3])
@@ -149,20 +149,21 @@ if len(sys.argv)>3 and sys.argv[1] == 'perplexity':
 
 if len(sys.argv)>3 and sys.argv[1] == 'translate':
     (sourceWord2ind,targetWord2ind) = pickle.load(open(wordsDataFileName, 'rb'))
+    targetIdToWord = {i: w for w, i in targetWord2ind.items()}
 
     sourceTest = utils.readCorpus(sys.argv[2])
 
     encoder = model.GRUEncoder(enc_embed_size, enc_hid_size, dec_hid_size, len(sourceWord2ind), enc_dropout).to(device)
     decoder = model.GRUDecoder(dec_embed_size, enc_hid_size, dec_hid_size, len(targetWord2ind), dec_dropout).to(device)
     nmt = model.NMTmodel(encoder, decoder, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
-    nmt.load(modelFileName)
+    nmt.load(modelFileName, device)
 
     nmt.eval()
     file = open(sys.argv[3],'w')
     pb = utils.progressBar()
     pb.start(len(sourceTest))
     for s in sourceTest:
-        file.write(' '.join(nmt.translateSentence(s))+"\n")
+        file.write(' '.join(nmt.translateSentence(s, targetIdToWord))+"\n")
         pb.tick()
     pb.stop()
 

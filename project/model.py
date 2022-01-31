@@ -22,8 +22,8 @@ class NMTmodel(torch.nn.Module):
     def save(self,fileName):
         torch.save(self.state_dict(), fileName)
     
-    def load(self,fileName):
-        self.load_state_dict(torch.load(fileName))
+    def load(self,fileName,device):
+        self.load_state_dict(torch.load(fileName, map_location = device))
 
     def create_mask(self, src):
         return (src != self.padTokenIdx).permute(1, 0)
@@ -70,9 +70,7 @@ class NMTmodel(torch.nn.Module):
 
         return H
 
-    def translateSentence(self, sentence, limit=1000):
-        targetIdToWord = {i: w for w, i in self.targetWord2ind.items()}
-
+    def translateSentence(self, sentence, targetIdToWord, limit=1000):
         device = next(self.parameters()).device
         tokens = [self.sourceWord2ind[w] if w in self.sourceWord2ind.keys() else self.unkTokenIdx for w in sentence]
         source = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(1)
