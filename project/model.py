@@ -75,18 +75,29 @@ class NMTmodel(torch.nn.Module):
         tokens = [self.sourceWord2ind[w] if w in self.sourceWord2ind.keys() else self.unkTokenIdx for w in sentence]
         source = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(1)
         result = [self.startTokenIdx]
+        Ht = set()
 
         with torch.no_grad():
             encoder_outputs, hidden = self.encoder(source, [len(source)])
 
             mask = self.create_mask(source)
 
-            for i in range(limit):
+            for t in range(limit):
                 target = torch.tensor([result[-1]], dtype=torch.long, device=device)
 
                 output, hidden, _ = self.decoder(target, hidden, encoder_outputs, mask)
 
-                pred_token = output.argmax(1).item()
+                # pred_token = output.argmax(1).item()
+
+                # result.append(pred_token)
+
+                # if pred_token == self.endTokenIdx:
+                #     break
+
+                topk = output.squeeze(0).topk(4).indices.tolist()
+                Ht.add(topk)
+
+                pred_token = next(token for token in topk if token != self.unkTokenIdx)
                 result.append(pred_token)
 
                 if pred_token == self.endTokenIdx:
