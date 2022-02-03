@@ -49,13 +49,14 @@ if len(sys.argv)>1 and (sys.argv[1] == 'train' or sys.argv[1] == 'extratrain'):
     (sourceCorpus,targetCorpus,sourceDev,targetDev) = pickle.load(open(corpusDataFileName, 'rb'))
     (sourceWord2ind,targetWord2ind) = pickle.load(open(wordsDataFileName, 'rb'))
 
-    encoder = model.GRUEncoder(enc_embed_size, enc_hid_size, dec_hid_size, len(sourceWord2ind), enc_dropout).to(device)
-    decoder = model.GRUDecoder(dec_embed_size, enc_hid_size, dec_hid_size, len(targetWord2ind), dec_dropout).to(device)
-    nmt = model.NMTmodel(encoder, decoder, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
+    encoder = model.Encoder(len(sourceWord2ind), enc_hid_size, enc_layers, enc_heads, enc_posf_size, enc_dropout, device, limit).to(device)
+    decoder = model.Decoder(len(targetWord2ind), dec_hid_size, dec_layers, dec_heads, dec_posf_size, dec_dropout, device, limit).to(device)
+    nmt = model.NMTmodel(encoder, decoder, device, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
     optimizer = torch.optim.Adam(nmt.parameters(), lr=learning_rate)
-
+    torch.autograd.set_detect_anomaly(True)
+    
     if sys.argv[1] == 'extratrain':
-        nmt.load(modelFileName,device)
+        nmt.load(modelFileName, device)
         (bestPerplexity,learning_rate,osd) = torch.load(modelFileName + '.optim', map_location = device)
         optimizer.load_state_dict(osd)
         for param_group in optimizer.param_groups:
@@ -75,7 +76,7 @@ if len(sys.argv)>1 and (sys.argv[1] == 'train' or sys.argv[1] == 'extratrain'):
         np.random.shuffle(idx)
         targetWords = 0
         trainTime = time.time()
-        for b in range(0, len(idx), batchSize):
+        for b in range(0, len(idx), batchSize):        
             iter += 1
             sourceBatch = [ sourceCorpus[i] for i in idx[b:min(b+batchSize, len(idx))] ]
             targetBatch = [ targetCorpus[i] for i in idx[b:min(b+batchSize, len(idx))] ]
@@ -114,7 +115,7 @@ if len(sys.argv)>1 and (sys.argv[1] == 'train' or sys.argv[1] == 'extratrain'):
                             exit(0)
                         learning_rate *= learning_rate_decay
                         print('load previously best model and decay learning rate to:', learning_rate)
-                        nmt.load(modelFileName)
+                        nmt.load(modelFileName, device)
                         (bestPerplexity,_,osd) = torch.load(modelFileName + '.optim')
                         optimizer.load_state_dict(osd)
                         for param_group in optimizer.param_groups:
@@ -135,9 +136,9 @@ if len(sys.argv)>1 and (sys.argv[1] == 'train' or sys.argv[1] == 'extratrain'):
 if len(sys.argv)>3 and sys.argv[1] == 'perplexity':
     (sourceWord2ind,targetWord2ind) = pickle.load(open(wordsDataFileName, 'rb'))
     
-    encoder = model.GRUEncoder(enc_embed_size, enc_hid_size, dec_hid_size, len(sourceWord2ind), enc_dropout).to(device)
-    decoder = model.GRUDecoder(dec_embed_size, enc_hid_size, dec_hid_size, len(targetWord2ind), dec_dropout).to(device)
-    nmt = model.NMTmodel(encoder, decoder, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
+    encoder = model.Encoder(len(sourceWord2ind), enc_hid_size, enc_layers, enc_heads, enc_posf_size, enc_dropout, device, limit).to(device)
+    decoder = model.Decoder(len(targetWord2ind), dec_hid_size, dec_layers, dec_heads, dec_posf_size, dec_dropout, device, limit).to(device)
+    nmt = model.NMTmodel(encoder, decoder, device, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
     nmt.load(modelFileName, device)
     
     sourceTest = utils.readCorpus(sys.argv[2])
@@ -149,23 +150,26 @@ if len(sys.argv)>3 and sys.argv[1] == 'perplexity':
 
 if len(sys.argv)>3 and sys.argv[1] == 'translate':
     (sourceWord2ind,targetWord2ind) = pickle.load(open(wordsDataFileName, 'rb'))
-    targetIdToWord = {i: w for w, i in targetWord2ind.items()}
+    beam = False
+
+    if len(sys.argv) > 4 and sys.argv[4] == "beam":
+        beam = True
 
     sourceTest = utils.readCorpus(sys.argv[2])
 
-    encoder = model.GRUEncoder(enc_embed_size, enc_hid_size, dec_hid_size, len(sourceWord2ind), enc_dropout).to(device)
-    decoder = model.GRUDecoder(dec_embed_size, enc_hid_size, dec_hid_size, len(targetWord2ind), dec_dropout).to(device)
-    nmt = model.NMTmodel(encoder, decoder, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
+    encoder = model.Encoder(len(sourceWord2ind), enc_hid_size, enc_layers, enc_heads, enc_posf_size, enc_dropout, device, limit).to(device)
+    decoder = model.Decoder(len(targetWord2ind), dec_hid_size, dec_layers, dec_heads, dec_posf_size, dec_dropout, device, limit).to(device)
+    nmt = model.NMTmodel(encoder, decoder, device, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken).to(device)
     nmt.load(modelFileName, device)
 
     nmt.eval()
     file = open(sys.argv[3],'w')
-    # pb = utils.progressBar()
-    # pb.start(len(sourceTest))
+    pb = utils.progressBar()
+    pb.start(len(sourceTest))
     for s in sourceTest:
-        file.write(' '.join(nmt.translateSentence(s, targetIdToWord))+"\n")
-        # pb.tick()
-    # pb.stop()
+        file.write(' '.join(nmt.translateSentence(s, beam))+"\n")
+        pb.tick()
+    pb.stop()
 
 if len(sys.argv)>3 and sys.argv[1] == 'bleu':
     ref = [[s] for s in utils.readCorpus(sys.argv[2])]

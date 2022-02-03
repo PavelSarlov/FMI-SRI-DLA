@@ -9,15 +9,15 @@
 #############################################################################
 
 import torch
+import torch.nn.functional as F
 import random
 
 class NMTmodel(torch.nn.Module):
     def preparePaddedBatch(self, source, word2ind):
-        device = next(self.parameters()).device
         m = max(len(s) for s in source)
         sents = [[word2ind.get(w,self.unkTokenIdx) for w in s] for s in source]
         sents_padded = [ s+(m-len(s))*[self.padTokenIdx] for s in sents]
-        return torch.t(torch.tensor(sents_padded, dtype=torch.long, device=device))
+        return torch.tensor(sents_padded, dtype=torch.long, device=self.device)
     
     def save(self,fileName):
         torch.save(self.state_dict(), fileName)
@@ -25,13 +25,27 @@ class NMTmodel(torch.nn.Module):
     def load(self,fileName,device):
         self.load_state_dict(torch.load(fileName, map_location = device))
 
-    def create_mask(self, src):
-        return (src != self.padTokenIdx).permute(1, 0)
+    def make_src_mask(self, src):
+        return (src != self.padTokenIdx).unsqueeze(1).unsqueeze(2)   # [batch size, 1, 1, src len]
     
-    def __init__(self, encoder, decoder, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken):
+    def make_trg_mask(self, trg):
+        trg_pad_mask = (trg != self.padTokenIdx).unsqueeze(1).unsqueeze(2)  # [batch size, 1, 1, trg len]
+        trg_len = trg.shape[1]
+        trg_sub_mask = torch.tril(torch.ones((trg_len, trg_len), device = self.device)).bool()  # [trg len, trg len]
+        return trg_pad_mask & trg_sub_mask  # [batch size, 1, trg len, trg len]
+
+    def get_topk(self, k, candidates, weights, alpha):
+        lenghts = torch.count_nonzero(weights, dim = 1)
+        norm_sum = torch.sum(weights, dim = 1) / torch.pow(lenghts, alpha)
+        topk = norm_sum.topk(k).indices
+        return candidates[topk], weights[topk]
+    
+    def __init__(self, encoder, decoder, device, sourceWord2ind, targetWord2ind, startToken, unkToken, padToken, endToken):
         super(NMTmodel, self).__init__()
+        self.device = device
         self.sourceWord2ind = sourceWord2ind
         self.targetWord2ind = targetWord2ind
+        self.targetInd2Word = { v: k for k, v in targetWord2ind.items() }
         self.startTokenIdx = sourceWord2ind[startToken]
         self.unkTokenIdx = sourceWord2ind[unkToken]
         self.padTokenIdx = sourceWord2ind[padToken]
@@ -39,137 +53,312 @@ class NMTmodel(torch.nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, source, target, teacher_forcing_ratio = 0.5):
-        source_padded = self.preparePaddedBatch(source, self.sourceWord2ind)
-        target_padded = self.preparePaddedBatch(target, self.targetWord2ind)
-        source_lengths = [len(s) for s in source]
-
-        target_len = target_padded.shape[0]
-        batch_size = target_padded.shape[1]
-        target_vocab_size = len(self.targetWord2ind)
-
-        outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(next(self.parameters()).device)
-
-        encoder_outputs, hidden = self.encoder(source_padded, source_lengths)
-
-        input = target_padded[0, :]
-        mask = self.create_mask(source_padded)
+    def forward(self, src, trg):
+        src_padded = self.preparePaddedBatch(src, self.sourceWord2ind)    # [batch size, src len]
+        trg_padded = self.preparePaddedBatch(trg, self.targetWord2ind)    # [batch size, trg len]
         
-        for t in range(1, target_len):
-            output, hidden, _ = self.decoder(input, hidden, encoder_outputs, mask)
+        src_mask = self.make_src_mask(src_padded)               # [batch size, 1, 1, src len]      
+        trg_mask = self.make_trg_mask(trg_padded[:, :-1])       # [batch size, 1, trg len, trg len]
+        
+        enc_src = self.encoder(src_padded, src_mask)                                           # [batch size, src len, hid dim]
+        output, attention = self.decoder(trg_padded[:, :-1], enc_src, trg_mask, src_mask)      # [batch size, trg len, output dim], [batch size, n heads, trg len, src len]
 
-            outputs[t] = output
+        output_dim = output.shape[-1]
+            
+        output = output.contiguous().view(-1, output_dim)
+        trg_padded = trg_padded[:,1:].contiguous().view(-1)
 
-            teacher_force = random.random() < teacher_forcing_ratio
-
-            input = target_padded[t] if teacher_force else output.argmax(1)
-
-        Y_bar = target_padded[1:-1].flatten(0, 1) 
-        Y_bar[Y_bar==self.endTokenIdx] = self.padTokenIdx 
-        H = torch.nn.functional.cross_entropy(outputs[1:-1].flatten(0, 1), Y_bar, ignore_index=self.padTokenIdx)
+        H = torch.nn.functional.cross_entropy(output, trg_padded, ignore_index=self.padTokenIdx)
 
         return H
 
-    def translateSentence(self, sentence, targetIdToWord, limit=1000):
-        device = next(self.parameters()).device
+    def translateSentence(self, sentence, beam=False, limit=1000):
+        if beam:
+            return self.beamTranslate(sentence, limit)
+        else:
+            return self.greedyTranslate(sentence, limit)
+
+    def greedyTranslate(self, sentence, targetIdToWord, limit=1000):
         tokens = [self.sourceWord2ind[w] if w in self.sourceWord2ind.keys() else self.unkTokenIdx for w in sentence]
-        source = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(1)
+        src = torch.tensor(tokens, dtype=torch.long, device=self.device).unsqueeze(0)
+        src_mask = self.make_src_mask(src)
         result = [self.startTokenIdx]
-        Ht = set()
 
         with torch.no_grad():
-            encoder_outputs, hidden = self.encoder(source, [len(source)])
+            encoder_outputs = self.encoder(src, src_mask)
 
-            mask = self.create_mask(source)
+            for i in range(limit):
+                trg = torch.tensor(result, dtype=torch.long, device=self.device).unsqueeze(0)
 
-            for t in range(limit):
-                target = torch.tensor([result[-1]], dtype=torch.long, device=device)
+                trg_mask = self.make_trg_mask(trg)
 
-                output, hidden, _ = self.decoder(target, hidden, encoder_outputs, mask)
+                output, attn = self.decoder(trg, encoder_outputs, trg_mask, src_mask)
+                output = output[:, -1, :].squeeze()
 
-                # pred_token = output.argmax(1).item()
+                sm = torch.nn.Softmax(0)
+                output = sm(output)
+                
+                topk = output.topk(2).indices.tolist()
 
-                # result.append(pred_token)
-
-                # if pred_token == self.endTokenIdx:
-                #     break
-
-                topk = output.squeeze(0).topk(4).indices.tolist()
-                Ht.add(topk)
-
-                pred_token = next(token for token in topk if token != self.unkTokenIdx)
+                pred_token = topk[0] if topk[0] != self.unkTokenIdx else topk[1]
                 result.append(pred_token)
 
                 if pred_token == self.endTokenIdx:
                     break
 
-        return [targetIdToWord[i] for i in result[1:]]
+        return [self.targetInd2Word[i] for i in result[1:] if i != self.endTokenIdx]
 
-class GRUEncoder(torch.nn.Module):
-    def __init__(self, embed_size, enc_hid_size, dec_hid_size, source_size, dropout):
-        super(GRUEncoder, self).__init__()
-        self.dropout = torch.nn.Dropout(dropout)
-        self.embed = torch.nn.Embedding(source_size, embed_size)
-        self.projection = torch.nn.Linear(2 * enc_hid_size, dec_hid_size)
-        self.gru = torch.nn.GRU(embed_size, enc_hid_size, bidirectional = True)
+    def beamTranslate(self, sentence, limit):
+        beam_width = 2
+        alpha = 0.7
 
-    def forward(self, source_padded, source_lengths):
-        E = self.dropout(self.embed(source_padded))
+        tokens = [self.sourceWord2ind[w] if w in self.sourceWord2ind.keys() else self.unkTokenIdx for w in sentence]
+        src = torch.tensor(tokens, dtype=torch.long, device=self.device).unsqueeze(0)
+        src_mask = self.make_src_mask(src)
 
-        outputPacked, hidden = self.gru(torch.nn.utils.rnn.pack_padded_sequence(E, source_lengths, enforce_sorted=False))
-        output, _ = torch.nn.utils.rnn.pad_packed_sequence(outputPacked)
+        candidates = torch.tensor([self.startTokenIdx], dtype=torch.long, device=self.device).repeat(beam_width, 1)
+        weights = torch.tensor([0], device=self.device).repeat(beam_width, 1)
 
-        t = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim = 1)
-        hidden = torch.nn.functional.relu(self.projection(t))
+        with torch.no_grad():
+            encoder_outputs = self.encoder(src, src_mask)
 
-        return output, hidden
+            for i in range(limit):
+                finished = [j for j,c in enumerate(candidates) if c[-1].item() in [self.endTokenIdx, self.padTokenIdx]]
+                cur_candidates = F.pad(candidates[finished], (0, 1), value=self.padTokenIdx) if finished else torch.empty(0, dtype=torch.long, device=self.device)
+                cur_weights = F.pad(weights[finished], (0, 1)) if finished else torch.empty(0, device=self.device)
+
+                cur_size = cur_candidates.shape[0]
+
+                for j in range(beam_width):
+
+                    if candidates[j, -1].item() in [self.endTokenIdx, self.padTokenIdx]:
+                        continue
+
+                    trg = candidates[j].unsqueeze(0)
+
+                    trg_mask = self.make_trg_mask(trg)
+
+                    output, attn = self.decoder(trg, encoder_outputs, trg_mask, src_mask)
+                    output = output[:, -1, :].squeeze()
+
+                    vocab_size = output.shape[0]
+
+                    sm = torch.nn.LogSoftmax(0)
+                    output = sm(output).unsqueeze(0).permute(1, 0).to(self.device)
+                    indices = torch.arange(vocab_size).unsqueeze(0).permute(1, 0).to(self.device)
+
+                    step_candidates = torch.cat((candidates[j].repeat(vocab_size, 1), indices), dim = 1)
+                    step_weights = torch.cat((weights[j].repeat(vocab_size, 1), output), dim = 1)
+
+                    cur_candidates = torch.cat((cur_candidates, step_candidates))
+                    cur_weights = torch.cat((cur_weights, step_weights))
+                    
+                    if i == 0:
+                        break
+
+                if cur_size == len(cur_candidates):
+                    break
+
+                candidates, weights = self.get_topk(beam_width, cur_candidates, cur_weights, alpha)
+
+        result = candidates[0].tolist()[1:]
+
+        return [self.targetInd2Word[i] for i in result if i not in [self.endTokenIdx, self.padTokenIdx]]
+
+
+class Encoder(torch.nn.Module):
+    def __init__(self, input_dim, hid_dim, n_layers, n_heads, pf_dim, dropout, device, max_length = 1000):
+        super().__init__()
+
+        self.device = device
         
-
-class GRUDecoder(torch.nn.Module):
-    def __init__(self, embed_size, enc_hid_size, dec_hid_size, target_size, dropout):
-        super(GRUDecoder, self).__init__()
-        self.embed = torch.nn.Embedding(target_size, embed_size)
+        self.tok_embedding = torch.nn.Embedding(input_dim, hid_dim)
+        self.pos_embedding = torch.nn.Embedding(max_length, hid_dim)
+        
+        self.layers = torch.nn.ModuleList([EncoderLayer(hid_dim, n_heads, pf_dim, dropout, device) for _ in range(n_layers)])
+        
         self.dropout = torch.nn.Dropout(dropout)
-        self.attention = Attention(enc_hid_size, dec_hid_size)
-        self.gru = torch.nn.GRU((enc_hid_size * 2) + embed_size, dec_hid_size)
-        self.projection = torch.nn.Linear((enc_hid_size *  2) + dec_hid_size + embed_size, target_size)
+        
+        self.scale = torch.sqrt(torch.FloatTensor([hid_dim])).to(device)
+        
+    def forward(self, src, src_mask):
+        
+        #src = [batch size, src len]
+        #src_mask = [batch size, 1, 1, src len]
+        
+        batch_size = src.shape[0]
+        src_len = src.shape[1]
+        
+        pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1).to(self.device)   # [batch size, src len]
+        
+        src = self.dropout((self.tok_embedding(src) * self.scale) + self.pos_embedding(pos))  # [batch size, src len, hid dim]
+        
+        for layer in self.layers:
+            src = layer(src, src_mask) # [batch size, src len, hid dim]
+            
+        return src
 
-    def forward(self, source, hidden, encoder_outputs, mask):
-        source = source.unsqueeze(0)
-        attn = self.attention(hidden, encoder_outputs, mask).unsqueeze(1)
+class EncoderLayer(torch.nn.Module):
+    def __init__(self, hid_dim, n_heads, pf_dim, dropout, device):
+        super().__init__()
+        
+        self.self_attn_layer_norm = torch.nn.LayerNorm(hid_dim)
+        self.ff_layer_norm = torch.nn.LayerNorm(hid_dim)
+        self.self_attention = MultiHeadAttentionLayer(hid_dim, n_heads, dropout, device)
+        self.positionwise_feedforward = PositionwiseFeedforwardLayer(hid_dim, pf_dim, dropout)
+        self.dropout = torch.nn.Dropout(dropout)
+        
+    def forward(self, src, src_mask):
+        
+        #src = [batch size, src len, hid dim]
+        #src_mask = [batch size, 1, 1, src len] 
+                
+        _src, _ = self.self_attention(src, src, src, src_mask)
+        src = self.self_attn_layer_norm(src + self.dropout(_src))  # [batch size, src len, hid dim]
 
-        E = self.dropout(self.embed(source))
+        _src = self.positionwise_feedforward(src)
+        src = self.ff_layer_norm(src + self.dropout(_src))  # [batch size, src len, hid dim]
+        
+        return src
 
-        encoder_outputs = encoder_outputs.permute(1, 0, 2)
-        weighted = torch.bmm(attn, encoder_outputs).permute(1, 0, 2)
+class MultiHeadAttentionLayer(torch.nn.Module):
+    def __init__(self, hid_dim, n_heads, dropout, device):
+        super().__init__()
+        
+        assert hid_dim % n_heads == 0
+        
+        self.hid_dim = hid_dim
+        self.n_heads = n_heads
+        self.head_dim = hid_dim // n_heads
+        
+        self.fc_q = torch.nn.Linear(hid_dim, hid_dim)
+        self.fc_k = torch.nn.Linear(hid_dim, hid_dim)
+        self.fc_v = torch.nn.Linear(hid_dim, hid_dim)
+        
+        self.fc_o = torch.nn.Linear(hid_dim, hid_dim)
+        
+        self.dropout = torch.nn.Dropout(dropout)
+        
+        self.scale = torch.sqrt(torch.FloatTensor([self.head_dim])).to(device)
+        
+    def forward(self, query, key, value, mask = None):
+        
+        batch_size = query.shape[0]
+        
+        #query = [batch size, query len, hid dim]
+        #key = [batch size, key len, hid dim]
+        #value = [batch size, value len, hid dim]
+                
+        Q = self.fc_q(query)  # [batch size, query len, hid dim]
+        K = self.fc_k(key)    # [batch size, key len, hid dim]  
+        V = self.fc_v(value)  # [batch size, value len, hid dim]
+                
+        Q = Q.view(batch_size, -1, self.n_heads, self.head_dim).permute(0, 2, 1, 3)  # [batch size, n heads, query len, head dim]
+        K = K.view(batch_size, -1, self.n_heads, self.head_dim).permute(0, 2, 1, 3)  # [batch size, n heads, key len, head dim]  
+        V = V.view(batch_size, -1, self.n_heads, self.head_dim).permute(0, 2, 1, 3)  # [batch size, n heads, value len, head dim]
+                
+        energy = torch.matmul(Q, K.permute(0, 1, 3, 2)) / self.scale  # [batch size, n heads, query len, key len]
+        
+        if mask is not None:
+            energy = energy.masked_fill(mask == 0, -1e10)
+        
+        attention = torch.softmax(energy, dim = -1)  # [batch size, n heads, query len, key len]
+                
+        x = torch.matmul(self.dropout(attention), V)  # [batch size, n heads, query len, head dim]
+        
+        x = x.permute(0, 2, 1, 3).contiguous()  # [batch size, query len, n heads, head dim]
+        
+        x = x.view(batch_size, -1, self.hid_dim)  # [batch size, query len, hid dim]
+        
+        x = self.fc_o(x)  # [batch size, query len, hid dim]
+        
+        return x, attention
 
-        t = torch.cat((E, weighted), dim = 2)
-        output, hidden = self.gru(t, hidden.unsqueeze(0))
+class PositionwiseFeedforwardLayer(torch.nn.Module):
+    def __init__(self, hid_dim, pf_dim, dropout):
+        super().__init__()
+        
+        self.fc_1 = torch.nn.Linear(hid_dim, pf_dim)
+        self.fc_2 = torch.nn.Linear(pf_dim, hid_dim)
+        
+        self.dropout = torch.nn.Dropout(dropout)
+        
+    def forward(self, x):
+        
+        #x = [batch size, seq len, hid dim]
+        
+        x = self.dropout(torch.relu(self.fc_1(x)))  # [batch size, seq len, pf dim]
+        
+        x = self.fc_2(x)  # [batch size, seq len, hid dim]
+        
+        return x
 
-        E = E.squeeze(0)
-        output = output.squeeze(0)
-        weighted = weighted.squeeze(0)
+class Decoder(torch.nn.Module):
+    def __init__(self, output_dim, hid_dim, n_layers, n_heads, pf_dim, dropout, device, max_length = 1000):
+        super().__init__()
+        
+        self.device = device
+        
+        self.tok_embedding = torch.nn.Embedding(output_dim, hid_dim)
+        self.pos_embedding = torch.nn.Embedding(max_length, hid_dim)
+        
+        self.layers = torch.nn.ModuleList([DecoderLayer(hid_dim, n_heads, pf_dim, dropout, device) for _ in range(n_layers)])
+        
+        self.fc_out = torch.nn.Linear(hid_dim, output_dim)
+        
+        self.dropout = torch.nn.Dropout(dropout)
+        
+        self.scale = torch.sqrt(torch.FloatTensor([hid_dim])).to(device)
+        
+    def forward(self, trg, enc_src, trg_mask, src_mask):
+        
+        #trg = [batch size, trg len]
+        #enc_src = [batch size, src len, hid dim]
+        #trg_mask = [batch size, 1, trg len, trg len]
+        #src_mask = [batch size, 1, 1, src len]
+                
+        batch_size = trg.shape[0]
+        trg_len = trg.shape[1]
+        
+        pos = torch.arange(0, trg_len).unsqueeze(0).repeat(batch_size, 1).to(self.device)  # [batch size, trg len] 
+            
+        trg = self.dropout((self.tok_embedding(trg) * self.scale) + self.pos_embedding(pos))  # [batch size, trg len, hid dim] 
+        
+        for layer in self.layers:
+            trg, attention = layer(trg, enc_src, trg_mask, src_mask)  # [batch size, trg len, hid dim], [batch size, n heads, trg len, src len]
+        
+        output = self.fc_out(trg)  # [batch size, trg len, output dim] 
+            
+        return output, attention
 
-        Z = self.projection(torch.cat((output, weighted, E), dim = 1))
-        return Z, hidden.squeeze(0), attn.squeeze(1)
+class DecoderLayer(torch.nn.Module):
+    def __init__(self, hid_dim, n_heads, pf_dim, dropout, device):
+        super().__init__()
+        
+        self.self_attn_layer_norm = torch.nn.LayerNorm(hid_dim)
+        self.enc_attn_layer_norm = torch.nn.LayerNorm(hid_dim)
+        self.ff_layer_norm = torch.nn.LayerNorm(hid_dim)
+        self.self_attention = MultiHeadAttentionLayer(hid_dim, n_heads, dropout, device)
+        self.encoder_attention = MultiHeadAttentionLayer(hid_dim, n_heads, dropout, device)
+        self.positionwise_feedforward = PositionwiseFeedforwardLayer(hid_dim, pf_dim, dropout)
+        self.dropout = torch.nn.Dropout(dropout)
+        
+    def forward(self, trg, enc_src, trg_mask, src_mask):
+        
+        #trg = [batch size, trg len, hid dim]
+        #enc_src = [batch size, src len, hid dim]
+        #trg_mask = [batch size, 1, trg len, trg len]
+        #src_mask = [batch size, 1, 1, src len]
+        
+        _trg, _ = self.self_attention(trg, trg, trg, trg_mask)
+        trg = self.self_attn_layer_norm(trg + self.dropout(_trg))  # [batch size, trg len, hid dim]
 
-class Attention(torch.nn.Module):
-    def __init__(self, enc_hid_size, dec_hid_size):
-        super(Attention, self).__init__()
-
-        self.attn = torch.nn.Linear((enc_hid_size) * 2 + dec_hid_size, dec_hid_size)
-        self.v = torch.nn.Linear(dec_hid_size, 1, bias = False)
-
-    def forward(self, hidden, encoder_outputs, mask):
-        batch_size = encoder_outputs.shape[1]
-        src_len = encoder_outputs.shape[0]
-
-        hidden = hidden.unsqueeze(1).repeat(1, src_len, 1)
-
-        encoder_outputs = encoder_outputs.permute(1,0,2)
-
-        energy = torch.nn.functional.relu(self.attn(torch.cat((hidden, encoder_outputs), dim = 2)))
-
-        attention = self.v(energy).squeeze(2).masked_fill(mask == 0, -1e10)
-
-        return torch.nn.functional.softmax(attention, dim = 1)
+        _trg, attention = self.encoder_attention(trg, enc_src, enc_src, src_mask)
+        trg = self.enc_attn_layer_norm(trg + self.dropout(_trg))  # [batch size, trg len, hid dim]
+        
+        _trg = self.positionwise_feedforward(trg)
+        trg = self.ff_layer_norm(trg + self.dropout(_trg))  # [batch size, trg len, hid dim]
+        
+        #attention = [batch size, n heads, trg len, src len]
+        
+        return trg, attention

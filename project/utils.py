@@ -67,3 +67,4 @@ def prepareData(sourceFileName, targetFileName, sourceDevFileName, targetDevFile
     print('Corpus loading completed.')
     return sourceCorpus, sourceWord2ind, targetCorpus, targetWord2ind, sourceDev, targetDev
 
+
