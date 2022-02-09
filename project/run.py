@@ -167,7 +167,7 @@ if len(sys.argv)>3 and sys.argv[1] == 'translate':
     pb = utils.progressBar()
     pb.start(len(sourceTest))
     for s in sourceTest:
-        file.write(' '.join(nmt.translateSentence(s, beam))+"\n")
+        file.write(' '.join(nmt.translateSentence(s, beam, beam_width, alpha))+"\n")
         pb.tick()
     pb.stop()
 

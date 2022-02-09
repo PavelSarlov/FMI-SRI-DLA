@@ -23,10 +23,12 @@ enc_posf_size = 256
 dec_posf_size = 256
 
 limit = 1000
+beam_width = 10
+alpha = 0.7
 
 uniform_init = 0.1
 learning_rate = 0.0005
-clip_grad = 1.0
+clip_grad = 5.0
 learning_rate_decay = 0.5
 
 batchSize = 32
