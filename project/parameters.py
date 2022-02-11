@@ -23,7 +23,7 @@ enc_posf_size = 256
 dec_posf_size = 256
 
 limit = 1000
-beam_width = 10
+beam_width = 3
 alpha = 0.7
 
 uniform_init = 0.1
