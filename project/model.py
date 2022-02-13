@@ -72,7 +72,7 @@ class NMTmodel(torch.nn.Module):
 
         return H
 
-    def translateSentence(self, sentence, beam=False, beam_width=5, alpha=0.7, limit=1000):
+    def translateSentence(self, sentence, beam=False, beam_width=3, alpha=0.7, limit=1000):
         if beam:
             return self.beamTranslate(sentence, beam_width, alpha, limit)
         else:

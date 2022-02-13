@@ -37,7 +37,7 @@ def readCorpus(fileName):
     ### fileName е името на файла, съдържащ корпуса
     ### връща списък от изречения, като всяко изречение е списък от думи
     print('Loading file:',fileName)
-    return [ nltk.word_tokenize(line) for line in open(fileName) ]
+    return [ nltk.word_tokenize(line) for line in open(fileName, encoding="utf-8") ]
 
 def getDictionary(corpus, startToken, endToken, unkToken, padToken, wordCountThreshold = 2):
     dictionary={}
